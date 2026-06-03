@@ -3,10 +3,10 @@ import logging
 from datetime import time
 import pytz
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    ContextTypes, MessageHandler, filters, ConversationHandler
+    ContextTypes, MessageHandler, filters
 )
 
 import sheets
@@ -18,10 +18,16 @@ TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = int(os.environ["CHAT_ID"])
 TZ = pytz.timezone("Asia/Jerusalem")
 
-WAITING_COMMENT = 1
-
-# Временное хранилище данных
 state = {}
+
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["📋 Меню", "💪 Зарядка"],
+        ["☀️ Чекин", "🥗 Питание"],
+        ["🌙 Вечер", "📊 Статистика"],
+    ],
+    resize_keyboard=True,
+)
 
 
 # ─── КЛАВИАТУРЫ ──────────────────────────────────────────────────────────────
@@ -190,7 +196,6 @@ async def send_morning_workout(context):
         reply_markup=workout_keyboard(),
     )
 
-
 async def send_morning_checkin(context):
     state["checkin"] = {"items": set(), "comment": ""}
     await context.bot.send_message(
@@ -200,7 +205,6 @@ async def send_morning_checkin(context):
         parse_mode="Markdown",
     )
 
-
 async def send_nutrition(context):
     state["nutrition"] = {"items": set(), "comment": ""}
     await context.bot.send_message(
@@ -209,7 +213,6 @@ async def send_nutrition(context):
         reply_markup=nutrition_keyboard(set()),
         parse_mode="Markdown",
     )
-
 
 async def send_evening(context):
     state["evening"] = {"items": set(), "comment": ""}
@@ -228,31 +231,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    # ── WORKOUT ──
     if data.startswith("workout:"):
         val = data.split(":")[1]
         if val == "other":
             state["waiting_comment_for"] = "workout_other"
-            state["workout_msg_id"] = query.message.message_id
-            await query.edit_message_text("✏️ Напиши что делала:")
+            await context.bot.send_message(chat_id=CHAT_ID, text="✏️ Напиши что делала:")
             return
         labels = {"none": "❌ Не делала", "short": "⚡ Разминка до 5 мин", "full": "💪 Зарядка"}
-        state["workout"] = {"workout": labels[val], "comment": ""}
         try:
-            sheets.save_morning(state["workout"])
+            sheets.save_morning({"workout": labels[val], "comment": ""})
         except Exception as e:
             logger.error(f"Sheets error: {e}")
         await query.edit_message_text(f"Записала: {labels[val]} 👍")
 
-    # ── CHECKIN ──
     elif data.startswith("checkin:"):
         val = data.split(":")[1]
         if "checkin" not in state:
             state["checkin"] = {"items": set(), "comment": ""}
         if val == "comment":
             state["waiting_comment_for"] = "checkin"
-            state["checkin_msg_id"] = query.message.message_id
-            await query.edit_message_text("✏️ Напиши комментарий:")
+            await context.bot.send_message(chat_id=CHAT_ID, text="✏️ Напиши комментарий, потом нажми 💾 Сохранить:")
             return
         elif val == "done":
             try:
@@ -263,21 +261,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("✅ Утренний чекин сохранён! 🌟")
         else:
             sel = state["checkin"]["items"]
-            if val in sel:
-                sel.discard(val)
-            else:
-                sel.add(val)
+            sel.discard(val) if val in sel else sel.add(val)
             await query.edit_message_reply_markup(checkin_keyboard(sel))
 
-    # ── NUTRITION ──
     elif data.startswith("nutrition:"):
         val = data.split(":")[1]
         if "nutrition" not in state:
             state["nutrition"] = {"items": set(), "comment": ""}
         if val == "comment":
             state["waiting_comment_for"] = "nutrition"
-            state["nutrition_msg_id"] = query.message.message_id
-            await query.edit_message_text("✏️ Напиши комментарий:")
+            await context.bot.send_message(chat_id=CHAT_ID, text="✏️ Напиши комментарий, потом нажми 💾 Сохранить:")
             return
         elif val == "done":
             try:
@@ -288,21 +281,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("✅ Питание сохранено! 🥗")
         else:
             sel = state["nutrition"]["items"]
-            if val in sel:
-                sel.discard(val)
-            else:
-                sel.add(val)
+            sel.discard(val) if val in sel else sel.add(val)
             await query.edit_message_reply_markup(nutrition_keyboard(sel))
 
-    # ── EVENING ──
     elif data.startswith("evening:"):
         val = data.split(":")[1]
         if "evening" not in state:
             state["evening"] = {"items": set(), "comment": ""}
         if val == "comment":
             state["waiting_comment_for"] = "evening"
-            state["evening_msg_id"] = query.message.message_id
-            await query.edit_message_text("✏️ Напиши комментарий:")
+            await context.bot.send_message(chat_id=CHAT_ID, text="✏️ Напиши комментарий, потом нажми 💾 Сохранить:")
             return
         elif val == "done":
             try:
@@ -313,13 +301,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("✅ Вечерний ритуал сохранён! 🌙")
         else:
             sel = state["evening"]["items"]
-            if val in sel:
-                sel.discard(val)
-            else:
-                sel.add(val)
+            sel.discard(val) if val in sel else sel.add(val)
             await query.edit_message_reply_markup(evening_keyboard(sel))
 
-    # ── MENU ──
     elif data.startswith("menu:"):
         parts = data.split(":")
         action = parts[1]
@@ -331,10 +315,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             section = parts[2]
             if section == "социализация":
                 state["waiting_comment_for"] = "menu_social"
-                await query.edit_message_text("🎉 Социализация — напиши что было:")
+                await context.bot.send_message(chat_id=CHAT_ID, text="🎉 Социализация — напиши что было:")
                 return
-            if section not in state.get("menu_sel", {}):
-                state.setdefault("menu_sel", {})[section] = set()
+            state.setdefault("menu_sel", {})[section] = state.get("menu_sel", {}).get(section, set())
             await query.edit_message_text(
                 f"📋 {SECTION_NAMES.get(section, section)}",
                 reply_markup=section_keyboard(section, state["menu_sel"].get(section, set()))
@@ -349,25 +332,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             state.setdefault("menu_sel", {}).setdefault(section, set())
             sel = state["menu_sel"][section]
-            if item in sel:
-                sel.discard(item)
-            else:
-                sel.add(item)
+            sel.discard(item) if item in sel else sel.add(item)
             await query.edit_message_reply_markup(section_keyboard(section, sel))
 
         elif action == "be":
             item = parts[2]
             state.setdefault("menu_sel", {}).setdefault("бэ", set())
             sel = state["menu_sel"]["бэ"]
-            if item in sel:
-                sel.discard(item)
-            else:
-                sel.add(item)
+            sel.discard(item) if item in sel else sel.add(item)
             await query.edit_message_reply_markup(be_keyboard(sel))
 
         elif action == "be_comment":
             state["waiting_comment_for"] = "menu_be"
-            await query.edit_message_text("✏️ Напиши комментарий к тренировке Б.Э:")
+            await context.bot.send_message(chat_id=CHAT_ID, text="✏️ Напиши комментарий к тренировке Б.Э:")
 
         elif action == "be_done":
             sel = state.get("menu_sel", {}).get("бэ", set())
@@ -384,28 +361,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif action == "comment":
             section = parts[2]
             state["waiting_comment_for"] = f"menu_{section}"
-            await query.edit_message_text(f"✏️ Комментарий к разделу {SECTION_NAMES.get(section, section)}:")
+            await context.bot.send_message(chat_id=CHAT_ID, text=f"✏️ Комментарий к {SECTION_NAMES.get(section, section)}, потом нажми 💾 Сохранить:")
 
         elif action == "done":
             section = parts[2]
             sel = state.get("menu_sel", {}).get(section, set())
             item_labels = {k: v for k, v in MENU_ITEMS.get(section, [])}
             comment = state.get(f"comment_{section}", "")
+            saved = False
             for item in sel:
                 try:
                     sheets.save_menu(SECTION_NAMES.get(section, section), item_labels.get(item, item), comment)
+                    saved = True
                 except Exception as e:
                     logger.error(f"Sheets error: {e}")
-            if not sel:
+            if not sel and comment:
                 try:
                     sheets.save_menu(SECTION_NAMES.get(section, section), "", comment)
+                    saved = True
                 except Exception as e:
                     logger.error(f"Sheets error: {e}")
             state.get("menu_sel", {}).pop(section, None)
             state.pop(f"comment_{section}", None)
             await query.edit_message_text(f"✅ {SECTION_NAMES.get(section, section)} сохранено!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Меню", callback_data="menu:back")]]))
 
-    # ── STATS ──
     elif data.startswith("stats:"):
         period = data.split(":")[1]
         text = build_stats(period)
@@ -416,35 +395,65 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]))
 
 
-# ─── ОБРАБОТКА ТЕКСТА (комментарии) ──────────────────────────────────────────
+# ─── ОБРАБОТКА ТЕКСТА ────────────────────────────────────────────────────────
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    # Кнопки постоянной клавиатуры
+    if text == "📋 Меню":
+        state["menu_sel"] = {}
+        await update.message.reply_text("📋 Меню — выбери раздел:", reply_markup=menu_keyboard())
+        return
+    elif text == "💪 Зарядка":
+        await update.message.reply_text("🌅 Как с зарядкой?", reply_markup=workout_keyboard())
+        return
+    elif text == "☀️ Чекин":
+        state["checkin"] = {"items": set(), "comment": ""}
+        await update.message.reply_text("☀️ Что успела сделать утром?", reply_markup=checkin_keyboard(set()))
+        return
+    elif text == "🥗 Питание":
+        state["nutrition"] = {"items": set(), "comment": ""}
+        await update.message.reply_text("🥗 Питание и здоровье", reply_markup=nutrition_keyboard(set()))
+        return
+    elif text == "🌙 Вечер":
+        state["evening"] = {"items": set(), "comment": ""}
+        await update.message.reply_text("🌙 Вечерний ритуал!", reply_markup=evening_keyboard(set()))
+        return
+    elif text == "📊 Статистика":
+        t = build_stats("week")
+        await update.message.reply_text(t, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📅 Неделя", callback_data="stats:week"),
+                 InlineKeyboardButton("🗓 Месяц", callback_data="stats:month")]
+            ]))
+        return
+
+    # Обработка комментариев
     waiting = state.get("waiting_comment_for")
     if not waiting:
         return
 
-    text = update.message.text
     state.pop("waiting_comment_for", None)
 
     if waiting == "workout_other":
-        state["workout"] = {"workout": text, "comment": ""}
         try:
-            sheets.save_morning(state["workout"])
+            sheets.save_morning({"workout": text, "comment": ""})
         except Exception as e:
             logger.error(f"Sheets error: {e}")
         await update.message.reply_text(f"Записала: {text} 👍")
 
     elif waiting == "checkin":
         state.setdefault("checkin", {})["comment"] = text
-        await update.message.reply_text("✅ Комментарий добавлен! Теперь нажми 💾 Сохранить.")
+        await update.message.reply_text("✅ Комментарий добавлен!")
 
     elif waiting == "nutrition":
         state.setdefault("nutrition", {})["comment"] = text
-        await update.message.reply_text("✅ Комментарий добавлен! Теперь нажми 💾 Сохранить.")
+        await update.message.reply_text("✅ Комментарий добавлен!")
 
     elif waiting == "evening":
         state.setdefault("evening", {})["comment"] = text
-        await update.message.reply_text("✅ Комментарий добавлен! Теперь нажми 💾 Сохранить.")
+        await update.message.reply_text("✅ Комментарий добавлен!")
 
     elif waiting == "menu_social":
         try:
@@ -455,12 +464,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif waiting == "menu_be":
         state["be_comment"] = text
-        await update.message.reply_text("✅ Комментарий добавлен! Теперь нажми 💾 Сохранить.")
+        await update.message.reply_text("✅ Комментарий добавлен!")
 
     elif waiting and waiting.startswith("menu_"):
         section = waiting.replace("menu_", "")
         state[f"comment_{section}"] = text
-        await update.message.reply_text("✅ Комментарий добавлен! Теперь нажми 💾 Сохранить.")
+        await update.message.reply_text("✅ Комментарий добавлен!")
 
 
 # ─── СТАТИСТИКА ──────────────────────────────────────────────────────────────
@@ -479,22 +488,22 @@ def build_stats(period: str) -> str:
     lines.append(f"💪 Зарядка: *{workout_done}/{len(morning)}* дней")
 
     checkin = data.get("чекин", [])
-    giyur = sum(1 for r in checkin if r.get("Гиюр") == "✓")
-    english = sum(1 for r in checkin if r.get("Английский") == "✓")
-    breath = sum(1 for r in checkin if r.get("Дыхание") == "✓")
     if checkin:
+        giyur = sum(1 for r in checkin if r.get("Гиюр") == "✓")
+        english = sum(1 for r in checkin if r.get("Английский") == "✓")
+        breath = sum(1 for r in checkin if r.get("Дыхание") == "✓")
         lines.append(f"📖 Гиюр: *{giyur}/{len(checkin)}* дней")
         lines.append(f"🇬🇧 Английский: *{english}/{len(checkin)}* дней")
         lines.append(f"🧘 Дыхание: *{breath}/{len(checkin)}* дней")
 
     nutrition = data.get("питание", [])
-    protein = sum(1 for r in nutrition if r.get("Белок") == "✓")
     if nutrition:
+        protein = sum(1 for r in nutrition if r.get("Белок") == "✓")
         lines.append(f"🥩 Белок: *{protein}/{len(nutrition)}* дней")
 
     evening = data.get("вечер", [])
-    stretch = sum(1 for r in evening if r.get("Растяжка") == "✓")
     if evening:
+        stretch = sum(1 for r in evening if r.get("Растяжка") == "✓")
         lines.append(f"🧘 Растяжка: *{stretch}/{len(evening)}* дней")
 
     menu = data.get("меню", [])
@@ -512,55 +521,28 @@ def build_stats(period: str) -> str:
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Привет! Я твой трекер привычек Кирпичики.\n\n"
-        "🕐 Вручную:\n"
-        "/workout — зарядка\n"
-        "/checkin — утренний чекин\n"
-        "/nutrition — питание\n"
-        "/evening — вечерний ритуал\n"
-        "/menu — меню дня\n\n"
-        "📊 /stats — статистика"
+        "👋 Привет! Я твой трекер Кирпичики.\n\nКнопки внизу — всегда доступны 👇",
+        reply_markup=MAIN_KEYBOARD,
     )
-
 
 async def cmd_workout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🌅 Как с зарядкой?",
-        reply_markup=workout_keyboard(),
-    )
-
+    await update.message.reply_text("🌅 Как с зарядкой?", reply_markup=workout_keyboard())
 
 async def cmd_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["checkin"] = {"items": set(), "comment": ""}
-    await update.message.reply_text(
-        "☀️ Что успела сделать утром?\n_можно выбрать несколько_",
-        reply_markup=checkin_keyboard(set()),
-        parse_mode="Markdown",
-    )
-
+    await update.message.reply_text("☀️ Что успела сделать утром?", reply_markup=checkin_keyboard(set()))
 
 async def cmd_nutrition(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["nutrition"] = {"items": set(), "comment": ""}
-    await update.message.reply_text(
-        "🥗 Питание и здоровье\n_можно выбрать несколько_",
-        reply_markup=nutrition_keyboard(set()),
-        parse_mode="Markdown",
-    )
-
+    await update.message.reply_text("🥗 Питание и здоровье", reply_markup=nutrition_keyboard(set()))
 
 async def cmd_evening(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["evening"] = {"items": set(), "comment": ""}
-    await update.message.reply_text(
-        "🌙 Вечерний ритуал!\n_можно выбрать несколько_",
-        reply_markup=evening_keyboard(set()),
-        parse_mode="Markdown",
-    )
-
+    await update.message.reply_text("🌙 Вечерний ритуал!", reply_markup=evening_keyboard(set()))
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state["menu_sel"] = {}
     await update.message.reply_text("📋 Меню — выбери раздел:", reply_markup=menu_keyboard())
-
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
