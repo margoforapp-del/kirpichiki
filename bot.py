@@ -196,23 +196,46 @@ async def send_morning_workout(context):
         reply_markup=workout_keyboard(),
     )
 
-async def send_morning_checkin(context):
-    state["checkin"] = {"items": set(), "comment": ""}
-    await context.bot.send_message(
-        chat_id=CHAT_ID,
-        text="☀️ Доброе утро! Что успела сделать?\n_можно выбрать несколько_",
-        reply_markup=checkin_keyboard(set()),
-        parse_mode="Markdown",
-    )
-
 async def send_nutrition(context):
     state["nutrition"] = {"items": set(), "comment": ""}
     await context.bot.send_message(
         chat_id=CHAT_ID,
-        text="🥗 Вечерний чекин питания\n_можно выбрать несколько_",
+        text="🥗 Питание за сегодня\n_можно выбрать несколько_",
         reply_markup=nutrition_keyboard(set()),
         parse_mode="Markdown",
     )
+
+async def send_hasl(context):
+    state.setdefault("menu_sel", {})["хасл"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="💼 Хасл — что было сегодня?", reply_markup=section_keyboard("хасл", set()))
+
+async def send_razvitie(context):
+    state.setdefault("menu_sel", {})["развитие"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="🌱 Развитие — что было сегодня?", reply_markup=section_keyboard("развитие", set()))
+
+async def send_sport(context):
+    state.setdefault("menu_sel", {})["спорт"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="🏅 Спорт — что было сегодня?", reply_markup=section_keyboard("спорт", set()))
+
+async def send_perepiska(context):
+    state.setdefault("menu_sel", {})["переписка"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="💌 Переписка — с кем писала сегодня?", reply_markup=section_keyboard("переписка", set()))
+
+async def send_sozvon(context):
+    state.setdefault("menu_sel", {})["созвон"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="📞 Созвон — с кем говорила сегодня?", reply_markup=section_keyboard("созвон", set()))
+
+async def send_socializacia(context):
+    state["waiting_comment_for"] = "menu_social"
+    await context.bot.send_message(chat_id=CHAT_ID, text="🎉 Социализация — напиши что было (или пропусти):")
+
+async def send_uhod(context):
+    state.setdefault("menu_sel", {})["уход"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="💅 Уход за собой — что делала сегодня?", reply_markup=section_keyboard("уход", set()))
+
+async def send_dom(context):
+    state.setdefault("menu_sel", {})["дом"] = set()
+    await context.bot.send_message(chat_id=CHAT_ID, text="🏠 Дом — что делала сегодня?", reply_markup=section_keyboard("дом", set()))
 
 async def send_evening(context):
     state["evening"] = {"items": set(), "comment": ""}
@@ -559,11 +582,22 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def setup_scheduler(app):
     jq = app.job_queue
+    # Зарядка: 6:40 вс-чт, 9:00 пт-сб
     jq.run_daily(send_morning_workout, time=time(6, 40, tzinfo=TZ), days=(0, 1, 2, 3, 4))
     jq.run_daily(send_morning_workout, time=time(9, 0, tzinfo=TZ), days=(5, 6))
-    jq.run_daily(send_morning_checkin, time=time(8, 0, tzinfo=TZ), days=(0, 1, 2, 3, 4))
-    jq.run_daily(send_nutrition, time=time(20, 0, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    # Хасл 21:00
+    jq.run_daily(send_hasl, time=time(21, 0, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    # Вечерний ритуал 22:00
     jq.run_daily(send_evening, time=time(22, 0, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    # 22:30 — питание и остальные разделы по очереди (каждые 2 минуты)
+    jq.run_daily(send_nutrition,     time=time(22, 30, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_razvitie,      time=time(22, 32, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_sport,         time=time(22, 34, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_perepiska,     time=time(22, 36, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_sozvon,        time=time(22, 38, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_socializacia,  time=time(22, 40, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_uhod,          time=time(22, 42, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
+    jq.run_daily(send_dom,           time=time(22, 44, tzinfo=TZ), days=(0, 1, 2, 3, 4, 5, 6))
 
 
 # ─── ЗАПУСК ──────────────────────────────────────────────────────────────────
